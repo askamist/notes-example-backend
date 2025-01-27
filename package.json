@@ -1,0 +1,29 @@
+{
+  "name": "notes-backend",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "lint": "eslint src/**/*.ts",
+    "lint:fix": "eslint src/**/*.ts --fix",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio",
+    "db:seed": "prisma db seed"
+  },
+  "dependencies": {
+    "@clerk/backend": "^1.23.7",
+    "@hono/clerk-auth": "^2.0.0",
+    "@hono/node-server": "^1.13.7",
+    "@prisma/client": "^6.2.1",
+    "hono": "^4.6.18"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.17",
+    "@typescript-eslint/eslint-plugin": "^8.21.0",
+    "@typescript-eslint/parser": "^8.21.0",
+    "eslint": "^9.19.0",
+    "jiti": "^2.4.2",
+    "prisma": "^6.2.1",
+    "tsx": "^4.7.1"
+  },
+  "packageManager": "pnpm@9.15.0+sha256.09a8fe31a34fda706354680619f4002f4ccef6dadff93240d24ef6c831f0fd28"
+}

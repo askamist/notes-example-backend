@@ -1,0 +1,54 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Team {
+  id        String       @id @default(uuid())
+  name      String
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  ownerId   String // Clerk user ID of team creator
+  members   TeamMember[]
+  Note      Note[]
+
+  @@index([ownerId])
+}
+
+model TeamMember {
+  id        String   @id @default(uuid())
+  teamId    String
+  userId    String // Clerk user ID
+  email     String
+  role      String   @default("member") // "owner" | "member"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@index([userId])
+}
+
+model Note {
+  id        String   @id @default(uuid())
+  title     String
+  content   String
+  userId    String // Add this field for Clerk user ID
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  teamId    String? // Optional team ID if note belongs to a team
+  team      Team?    @relation(fields: [teamId], references: [id])
+
+  @@index([userId]) // Add an index for better query performance
+  @@index([teamId])
+}
