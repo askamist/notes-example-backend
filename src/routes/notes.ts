@@ -1,13 +1,14 @@
 import { Hono, type Context } from "hono";
 import { prisma } from "../lib/prisma.js";
 import { getAuth } from "@hono/clerk-auth";
-import OpenAI from "openai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import { generateRandomColor } from "../utils/colors.js";
+import { analyzeAndTagNote } from "../utils/tagging.js";
 
 const notesRouter = new Hono();
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Initialize Gemini
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 // Get all notes for the authenticated user
 notesRouter.get("/", async (c: Context) => {
@@ -111,6 +112,9 @@ notesRouter.post("/", async (c: Context) => {
       },
     });
 
+    // Automatically analyze and tag the new note
+    await analyzeAndTagNote(note.id);
+
     return c.json(note, 201);
   } catch (error) {
     return c.json({ error: "Failed to create note" }, 500);
@@ -178,7 +182,6 @@ notesRouter.put("/:id", async (c: Context) => {
 
   const id = c.req.param("id");
   try {
-    // First verify the note belongs to the user
     const existingNote = await prisma.note.findFirst({
       where: {
         id,
@@ -203,6 +206,9 @@ notesRouter.put("/:id", async (c: Context) => {
         ...(content && { content }),
       },
     });
+
+    // Automatically analyze and tag the updated note
+    await analyzeAndTagNote(note.id);
 
     return c.json(note);
   } catch (error) {
@@ -339,7 +345,7 @@ notesRouter.post("/:id/share-team", async (c: Context) => {
   }
 });
 
-// Add this new endpoint
+// Analyze tags endpoint (keep this for manual retagging if needed)
 notesRouter.post("/:id/analyze-tags", async (c: Context) => {
   const auth = getAuth(c);
   if (!auth?.userId) {
@@ -349,7 +355,6 @@ notesRouter.post("/:id/analyze-tags", async (c: Context) => {
   const noteId = c.req.param("id");
 
   try {
-    // Fetch the note
     const note = await prisma.note.findFirst({
       where: {
         id: noteId,
@@ -361,79 +366,12 @@ notesRouter.post("/:id/analyze-tags", async (c: Context) => {
       return c.json({ error: "Note not found or unauthorized" }, 404);
     }
 
-    // Use OpenAI to analyze the content and suggest tags
-    const completion = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are a helpful assistant that analyzes text and suggests relevant tags. Return only a JSON array of strings representing the tags. Limit to 5 most relevant tags.",
-        },
-        {
-          role: "user",
-          content: `Title: ${note.title}\n\nContent: ${note.content}`,
-        },
-      ],
-      temperature: 0.7,
-    });
-
-    const suggestedTags = JSON.parse(
-      completion.choices[0].message.content || "[]"
-    );
-
-    // Create or get existing tags and associate them with the note
-    const tagPromises = suggestedTags.map(async (tagName: string) => {
-      const tag = await prisma.tag.upsert({
-        where: { name: tagName.toLowerCase() },
-        create: {
-          name: tagName.toLowerCase(),
-          color: generateRandomColor(), // Implement this helper function
-        },
-        update: {},
-      });
-
-      // Associate tag with note
-      await prisma.notesOnTags.upsert({
-        where: {
-          noteId_tagId: {
-            noteId: note.id,
-            tagId: tag.id,
-          },
-        },
-        create: {
-          noteId: note.id,
-          tagId: tag.id,
-        },
-        update: {},
-      });
-
-      return tag;
-    });
-
-    const tags = await Promise.all(tagPromises);
+    const tags = await analyzeAndTagNote(noteId);
     return c.json(tags);
   } catch (error) {
     console.error(error);
     return c.json({ error: "Failed to analyze and create tags" }, 500);
   }
 });
-
-// Helper function to generate random colors for tags
-function generateRandomColor(): string {
-  const colors = [
-    "#F87171",
-    "#FB923C",
-    "#FBBF24",
-    "#34D399",
-    "#60A5FA",
-    "#818CF8",
-    "#A78BFA",
-    "#F472B6",
-    "#94A3B8",
-    "#6EE7B7",
-  ];
-  return colors[Math.floor(Math.random() * colors.length)];
-}
 
 export default notesRouter;
