@@ -54,10 +54,7 @@ app.get("/health", (c: Context) => {
 app.route("/api", router);
 
 const port = process.env.PORT ? parseInt(process.env.PORT) : 3000;
-console.log(
-  `Server is running on http://localhost:${port}`,
-  app.routes.map((route) => `${route.method} ${route.path}`)
-);
+console.log(`Server is running on http://localhost:${port}`);
 
 serve({
   fetch: app.fetch,

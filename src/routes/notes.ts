@@ -4,6 +4,71 @@ import { getAuth } from "@hono/clerk-auth";
 
 const notesRouter = new Hono();
 
+// Get all notes for the authenticated user
+notesRouter.get("/", async (c: Context) => {
+  const auth = getAuth(c);
+  if (!auth?.userId) {
+    return c.json({ message: "Unauthorized" }, 401);
+  }
+
+  try {
+    const notes = await prisma.note.findMany({
+      where: {
+        userId: auth.userId,
+      },
+      orderBy: {
+        updatedAt: "desc",
+      },
+    });
+    return c.json(notes);
+  } catch (error) {
+    console.error(error);
+    return c.json({ error: "Failed to fetch notes" }, 500);
+  }
+});
+
+// Get shared notes
+notesRouter.get("/shared", async (c: Context) => {
+  const auth = getAuth(c);
+  if (!auth?.userId) {
+    return c.json({ message: "Unauthorized" }, 401);
+  }
+
+  try {
+    const sharedNotes = await prisma.note.findMany({
+      where: {
+        OR: [
+          {
+            sharedWith: {
+              some: {
+                userId: auth.userId,
+              },
+            },
+          },
+          {
+            team: {
+              members: {
+                some: {
+                  userId: auth.userId,
+                },
+              },
+            },
+          },
+        ],
+      },
+      include: {
+        sharedWith: true,
+        team: true,
+      },
+    });
+
+    return c.json(sharedNotes);
+  } catch (error) {
+    console.error(error);
+    return c.json({ error: "Failed to fetch shared notes" }, 500);
+  }
+});
+
 // Create a note
 notesRouter.post("/", async (c: Context) => {
   const auth = getAuth(c);
@@ -29,29 +94,6 @@ notesRouter.post("/", async (c: Context) => {
     return c.json(note, 201);
   } catch (error) {
     return c.json({ error: "Failed to create note" }, 500);
-  }
-});
-
-// Get all notes for the authenticated user
-notesRouter.get("/", async (c: Context) => {
-  const auth = getAuth(c);
-  if (!auth?.userId) {
-    return c.json({ message: "Unauthorized" }, 401);
-  }
-
-  try {
-    const notes = await prisma.note.findMany({
-      where: {
-        userId: auth.userId,
-      },
-      orderBy: {
-        updatedAt: "desc",
-      },
-    });
-    return c.json(notes);
-  } catch (error) {
-    console.error(error);
-    return c.json({ error: "Failed to fetch notes" }, 500);
   }
 });
 
@@ -142,6 +184,105 @@ notesRouter.delete("/:id", async (c: Context) => {
     return c.json({ message: "Note deleted" });
   } catch (error) {
     return c.json({ error: "Failed to delete note" }, 500);
+  }
+});
+
+// Share note with a user
+notesRouter.post("/:id/share", async (c: Context) => {
+  const auth = getAuth(c);
+  if (!auth?.userId) {
+    return c.json({ message: "Unauthorized" }, 401);
+  }
+
+  const noteId = c.req.param("id");
+  const { email, access } = await c.req.json();
+
+  try {
+    // Verify note ownership
+    const note = await prisma.note.findFirst({
+      where: {
+        id: noteId,
+        userId: auth.userId,
+      },
+    });
+
+    if (!note) {
+      return c.json({ error: "Note not found or unauthorized" }, 404);
+    }
+
+    // Find user by email using Clerk
+    const clerkClient = c.get("clerk");
+    const users = await clerkClient.users.getUserList({
+      emailAddress: [email],
+    });
+    const targetUser = users.data[0];
+
+    if (!targetUser) {
+      return c.json({ error: "User not found" }, 404);
+    }
+
+    // Create share record
+    const shareRecord = await prisma.noteShare.create({
+      data: {
+        noteId,
+        userId: targetUser.id,
+        email,
+        access: access || "view",
+      },
+    });
+
+    return c.json(shareRecord, 201);
+  } catch (error) {
+    console.error(error);
+    return c.json({ error: "Failed to share note" }, 500);
+  }
+});
+
+// Share note with a team
+notesRouter.post("/:id/share-team", async (c: Context) => {
+  const auth = getAuth(c);
+  if (!auth?.userId) {
+    return c.json({ message: "Unauthorized" }, 401);
+  }
+
+  const noteId = c.req.param("id");
+  const { teamId } = await c.req.json();
+
+  try {
+    // Verify note ownership
+    const note = await prisma.note.findFirst({
+      where: {
+        id: noteId,
+        userId: auth.userId,
+      },
+    });
+
+    if (!note) {
+      return c.json({ error: "Note not found or unauthorized" }, 404);
+    }
+
+    // Verify team membership
+    const teamMember = await prisma.teamMember.findFirst({
+      where: {
+        teamId,
+        userId: auth.userId,
+      },
+    });
+
+    if (!teamMember) {
+      return c.json({ error: "Team not found or not a member" }, 404);
+    }
+
+    // Update note with team
+    const updatedNote = await prisma.note.update({
+      where: { id: noteId },
+      data: { teamId },
+    });
+
+    return c.json(updatedNote, 200);
+  } catch (error) {
+    console.error(error);
+    return c.json({ error: "Failed to share note with team" }, 500);
   }
 });
 

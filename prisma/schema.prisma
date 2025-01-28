@@ -40,15 +40,29 @@ model TeamMember {
 }
 
 model Note {
-  id        String   @id @default(uuid())
-  title     String
-  content   String
-  userId    String // Add this field for Clerk user ID
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  teamId    String? // Optional team ID if note belongs to a team
-  team      Team?    @relation(fields: [teamId], references: [id])
+  id         String      @id @default(cuid())
+  title      String
+  content    String
+  userId     String
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  teamId     String? // Optional team ownership
+  team       Team?       @relation(fields: [teamId], references: [id])
+  sharedWith NoteShare[] // Users the note is shared with
 
   @@index([userId]) // Add an index for better query performance
   @@index([teamId])
+}
+
+model NoteShare {
+  id        String   @id @default(cuid())
+  noteId    String
+  note      Note     @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  userId    String // The user the note is shared with
+  email     String // Email of the shared user
+  access    String   @default("view") // "view" or "edit"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([noteId, userId])
 }
