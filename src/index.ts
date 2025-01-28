@@ -1,6 +1,6 @@
 import { serve } from "@hono/node-server";
-import { Hono } from "hono";
-import router from "./routes";
+import { Hono, type Context } from "hono";
+import router from "./routes/index.js";
 import { HTTPException } from "hono/http-exception";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
@@ -54,9 +54,13 @@ app.get("/health", (c: Context) => {
 app.route("/api", router);
 
 const port = process.env.PORT ? parseInt(process.env.PORT) : 3000;
-console.log(`Server is running on http://localhost:${port}`);
+console.log(
+  `Server is running on http://localhost:${port}`,
+  app.routes.map((route) => `${route.method} ${route.path}`)
+);
 
 serve({
   fetch: app.fetch,
   port,
+  hostname: "0.0.0.0",
 });
