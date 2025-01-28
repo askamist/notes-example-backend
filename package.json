@@ -1,5 +1,6 @@
 {
   "name": "notes-backend",
+  "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "lint": "eslint src/**/*.ts",

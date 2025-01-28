@@ -1,7 +1,7 @@
-import { Context, Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { clerkMiddleware, getAuth } from "@hono/clerk-auth";
-import notesRouter from "./notes";
-import teamsRouter from "./teams";
+import notesRouter from "./notes.js";
+import teamsRouter from "./teams.js";
 const apiRouter = new Hono();
 
 apiRouter.use("*", clerkMiddleware());

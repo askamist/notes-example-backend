@@ -1,12 +1,17 @@
-import { Hono, Context } from "hono";
-import { prisma } from "../lib/prisma";
+import { prisma } from "../lib/prisma.js";
 import { getAuth } from "@hono/clerk-auth";
-
+import type {
+  AuthContext,
+  Team,
+  TeamMember,
+  TeamCreateInput,
+} from "../types/index.js";
+import { Hono, type Context } from "hono";
 const teamsRouter = new Hono();
 
 // Create a team
 teamsRouter.post("/", async (c: Context) => {
-  const auth = getAuth(c);
+  const auth = getAuth(c) as AuthContext;
   if (!auth?.userId) {
     return c.json({ message: "Unauthorized" }, 401);
   }
@@ -18,14 +23,20 @@ teamsRouter.post("/", async (c: Context) => {
       return c.json({ error: "Team name is required" }, 400);
     }
 
+    const teamInput: TeamCreateInput = {
+      name,
+      ownerId: auth.userId,
+      ownerEmail: auth.user?.emailAddresses[0]?.emailAddress || "",
+    };
+
     const team = await prisma.team.create({
       data: {
-        name,
-        ownerId: auth.userId,
+        name: teamInput.name,
+        ownerId: teamInput.ownerId,
         members: {
           create: {
-            userId: auth.userId,
-            email: auth.user?.emailAddresses[0]?.emailAddress || "",
+            userId: teamInput.ownerId,
+            email: teamInput.ownerEmail,
             role: "owner",
           },
         },
@@ -35,7 +46,7 @@ teamsRouter.post("/", async (c: Context) => {
       },
     });
 
-    return c.json(team, 201);
+    return c.json(team as Team, 201);
   } catch (error) {
     console.error(error);
     return c.json({ error: "Failed to create team" }, 500);
@@ -44,14 +55,69 @@ teamsRouter.post("/", async (c: Context) => {
 
 // Get user's teams
 teamsRouter.get("/", async (c: Context) => {
-  const auth = getAuth(c);
+  const auth = getAuth(c) as AuthContext;
   if (!auth?.userId) {
     return c.json({ message: "Unauthorized" }, 401);
   }
 
   try {
-    const teams = await prisma.team.findMany({
+    const [ownedTeams, memberTeams] = await Promise.all([
+      // Get teams owned by user
+      prisma.team.findMany({
+        where: {
+          ownerId: auth.userId,
+        },
+        include: {
+          members: true,
+        },
+      }),
+      // Get teams where user is a member but not owner
+      prisma.team.findMany({
+        where: {
+          AND: [
+            {
+              members: {
+                some: {
+                  userId: auth.userId,
+                },
+              },
+            },
+            {
+              ownerId: {
+                not: auth.userId,
+              },
+            },
+          ],
+        },
+        include: {
+          members: true,
+        },
+      }),
+    ]);
+
+    return c.json({
+      ownedTeams,
+      memberTeams,
+    });
+  } catch (error) {
+    console.error(error);
+    return c.json({ error: "Failed to fetch teams" }, 500);
+  }
+});
+
+// Get a single team
+teamsRouter.get("/:teamId", async (c: Context) => {
+  const auth = getAuth(c) as AuthContext;
+  if (!auth?.userId) {
+    return c.json({ message: "Unauthorized" }, 401);
+  }
+
+  const teamId = c.req.param("teamId");
+
+  try {
+    const team = await prisma.team.findFirst({
       where: {
+        id: teamId,
         members: {
           some: {
             userId: auth.userId,
@@ -63,16 +129,21 @@ teamsRouter.get("/", async (c: Context) => {
       },
     });
 
-    return c.json(teams);
+    if (!team) {
+      return c.json({ error: "Team not found" }, 404);
+    }
+
+    return c.json(team as Team);
   } catch (error) {
     console.error(error);
-    return c.json({ error: "Failed to fetch teams" }, 500);
+    return c.json({ error: "Failed to fetch team" }, 500);
   }
 });
 
 // Add member to team
 teamsRouter.post("/:teamId/members", async (c: Context) => {
-  const auth = getAuth(c);
+  const auth = getAuth(c) as AuthContext;
+  const clerkClient = c.get("clerk");
   if (!auth?.userId) {
     return c.json({ message: "Unauthorized" }, 401);
   }
@@ -80,8 +151,14 @@ teamsRouter.post("/:teamId/members", async (c: Context) => {
   const teamId = c.req.param("teamId");
   const { email } = await c.req.json();
 
+  const user = (await clerkClient.users.getUserList({ emailAddress: [email] }))
+    .data[0];
+
+  if (!user) {
+    return c.json({ error: "Could not find user with email" }, 404);
+  }
+
   try {
-    // Check if user is team owner
     const team = await prisma.team.findFirst({
       where: {
         id: teamId,
@@ -93,17 +170,16 @@ teamsRouter.post("/:teamId/members", async (c: Context) => {
       return c.json({ error: "Team not found or unauthorized" }, 404);
     }
 
-    // Add member
     const member = await prisma.teamMember.create({
       data: {
         teamId,
         email,
-        userId: "", // This will be updated when user accepts invitation
         role: "member",
+        userId: user.id,
       },
     });
 
-    return c.json(member, 201);
+    return c.json(member as TeamMember, 201);
   } catch (error) {
     console.error(error);
     return c.json({ error: "Failed to add team member" }, 500);
@@ -112,7 +188,7 @@ teamsRouter.post("/:teamId/members", async (c: Context) => {
 
 // Remove member from team
 teamsRouter.delete("/:teamId/members/:memberId", async (c: Context) => {
-  const auth = getAuth(c);
+  const auth = getAuth(c) as AuthContext;
   if (!auth?.userId) {
     return c.json({ message: "Unauthorized" }, 401);
   }
@@ -120,7 +196,6 @@ teamsRouter.delete("/:teamId/members/:memberId", async (c: Context) => {
   const { teamId, memberId } = c.req.param();
 
   try {
-    // Check if user is team owner
     const team = await prisma.team.findFirst({
       where: {
         id: teamId,

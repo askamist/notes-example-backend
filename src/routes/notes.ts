@@ -1,5 +1,5 @@
-import { Hono, Context } from "hono";
-import { prisma } from "../lib/prisma";
+import { Hono, type Context } from "hono";
+import { prisma } from "../lib/prisma.js";
 import { getAuth } from "@hono/clerk-auth";
 
 const notesRouter = new Hono();

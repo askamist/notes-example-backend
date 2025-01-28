@@ -20,7 +20,7 @@ model Team {
   updatedAt DateTime     @updatedAt
   ownerId   String // Clerk user ID of team creator
   members   TeamMember[]
-  Note      Note[]
+  notes     Note[]
 
   @@index([ownerId])
 }
