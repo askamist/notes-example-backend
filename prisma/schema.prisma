@@ -39,18 +39,40 @@ model TeamMember {
   @@index([userId])
 }
 
+model Tag {
+  id        String        @id @default(cuid())
+  name      String
+  color     String? // For UI display
+  notes     NotesOnTags[]
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@unique([name])
+}
+
+model NotesOnTags {
+  noteId    String
+  tagId     String
+  note      Note     @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  tag       Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([noteId, tagId])
+}
+
 model Note {
-  id         String      @id @default(cuid())
+  id         String        @id @default(cuid())
   title      String
   content    String
   userId     String
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
-  teamId     String? // Optional team ownership
-  team       Team?       @relation(fields: [teamId], references: [id])
-  sharedWith NoteShare[] // Users the note is shared with
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  teamId     String?
+  team       Team?         @relation(fields: [teamId], references: [id])
+  sharedWith NoteShare[]
+  tags       NotesOnTags[]
 
-  @@index([userId]) // Add an index for better query performance
+  @@index([userId])
   @@index([teamId])
 }
 

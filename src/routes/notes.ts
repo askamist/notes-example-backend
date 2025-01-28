@@ -1,8 +1,13 @@
 import { Hono, type Context } from "hono";
 import { prisma } from "../lib/prisma.js";
 import { getAuth } from "@hono/clerk-auth";
+import OpenAI from "openai";
 
 const notesRouter = new Hono();
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 // Get all notes for the authenticated user
 notesRouter.get("/", async (c: Context) => {
@@ -15,6 +20,13 @@ notesRouter.get("/", async (c: Context) => {
     const notes = await prisma.note.findMany({
       where: {
         userId: auth.userId,
+      },
+      include: {
+        tags: {
+          include: {
+            tag: true,
+          },
+        },
       },
       orderBy: {
         updatedAt: "desc",
@@ -59,6 +71,14 @@ notesRouter.get("/shared", async (c: Context) => {
       include: {
         sharedWith: true,
         team: true,
+        tags: {
+          include: {
+            tag: true,
+          },
+        },
+      },
+      orderBy: {
+        updatedAt: "desc",
       },
     });
 
@@ -99,11 +119,44 @@ notesRouter.post("/", async (c: Context) => {
 
 // Get a single note
 notesRouter.get("/:id", async (c) => {
+  const auth = getAuth(c);
+  if (!auth?.userId) {
+    return c.json({ message: "Unauthorized" }, 401);
+  }
+
   try {
     const { id } = c.req.param();
 
-    const note = await prisma.note.findUnique({
-      where: { id },
+    const note = await prisma.note.findFirst({
+      where: {
+        id,
+        OR: [
+          { userId: auth.userId },
+          {
+            sharedWith: {
+              some: {
+                userId: auth.userId,
+              },
+            },
+          },
+          {
+            team: {
+              members: {
+                some: {
+                  userId: auth.userId,
+                },
+              },
+            },
+          },
+        ],
+      },
+      include: {
+        tags: {
+          include: {
+            tag: true,
+          },
+        },
+      },
     });
 
     if (!note) {
@@ -285,5 +338,102 @@ notesRouter.post("/:id/share-team", async (c: Context) => {
     return c.json({ error: "Failed to share note with team" }, 500);
   }
 });
+
+// Add this new endpoint
+notesRouter.post("/:id/analyze-tags", async (c: Context) => {
+  const auth = getAuth(c);
+  if (!auth?.userId) {
+    return c.json({ message: "Unauthorized" }, 401);
+  }
+
+  const noteId = c.req.param("id");
+
+  try {
+    // Fetch the note
+    const note = await prisma.note.findFirst({
+      where: {
+        id: noteId,
+        userId: auth.userId,
+      },
+    });
+
+    if (!note) {
+      return c.json({ error: "Note not found or unauthorized" }, 404);
+    }
+
+    // Use OpenAI to analyze the content and suggest tags
+    const completion = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a helpful assistant that analyzes text and suggests relevant tags. Return only a JSON array of strings representing the tags. Limit to 5 most relevant tags.",
+        },
+        {
+          role: "user",
+          content: `Title: ${note.title}\n\nContent: ${note.content}`,
+        },
+      ],
+      temperature: 0.7,
+    });
+
+    const suggestedTags = JSON.parse(
+      completion.choices[0].message.content || "[]"
+    );
+
+    // Create or get existing tags and associate them with the note
+    const tagPromises = suggestedTags.map(async (tagName: string) => {
+      const tag = await prisma.tag.upsert({
+        where: { name: tagName.toLowerCase() },
+        create: {
+          name: tagName.toLowerCase(),
+          color: generateRandomColor(), // Implement this helper function
+        },
+        update: {},
+      });
+
+      // Associate tag with note
+      await prisma.notesOnTags.upsert({
+        where: {
+          noteId_tagId: {
+            noteId: note.id,
+            tagId: tag.id,
+          },
+        },
+        create: {
+          noteId: note.id,
+          tagId: tag.id,
+        },
+        update: {},
+      });
+
+      return tag;
+    });
+
+    const tags = await Promise.all(tagPromises);
+    return c.json(tags);
+  } catch (error) {
+    console.error(error);
+    return c.json({ error: "Failed to analyze and create tags" }, 500);
+  }
+});
+
+// Helper function to generate random colors for tags
+function generateRandomColor(): string {
+  const colors = [
+    "#F87171",
+    "#FB923C",
+    "#FBBF24",
+    "#34D399",
+    "#60A5FA",
+    "#818CF8",
+    "#A78BFA",
+    "#F472B6",
+    "#94A3B8",
+    "#6EE7B7",
+  ];
+  return colors[Math.floor(Math.random() * colors.length)];
+}
 
 export default notesRouter;
