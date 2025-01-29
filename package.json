@@ -16,9 +16,16 @@
     "@google/generative-ai": "^0.21.0",
     "@hono/clerk-auth": "^2.0.0",
     "@hono/node-server": "^1.13.7",
+    "@hono/node-ws": "^1.0.6",
     "@prisma/client": "^6.2.1",
+    "@types/ws": "^8.5.14",
     "hono": "^4.6.18",
-    "openai": "^4.80.1"
+    "openai": "^4.80.1",
+    "quill-cursors": "^4.0.4",
+    "ws": "^8.18.0",
+    "y-quill": "^1.0.0",
+    "y-websocket": "^2.1.0",
+    "yjs": "^13.6.23"
   },
   "devDependencies": {
     "@types/node": "^20.11.17",

@@ -4,6 +4,9 @@ import router from "./routes/index.js";
 import { HTTPException } from "hono/http-exception";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
+import { setupYjsWebSocket } from "./y-websocket/server.js";
+import { createServer } from "http";
+
 const app = new Hono();
 
 // Add CORS middleware
@@ -60,4 +63,9 @@ serve({
   fetch: app.fetch,
   port,
   hostname: "0.0.0.0",
+  createServer: (...args: any[]) => {
+    const server = createServer(...args);
+    setupYjsWebSocket(server, app);
+    return server;
+  },
 });

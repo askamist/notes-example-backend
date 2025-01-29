@@ -115,7 +115,7 @@ notesRouter.post("/", async (c: Context) => {
     // Automatically analyze and tag the new note
     await analyzeAndTagNote(note.id);
 
-    return c.json(note, 201);
+    return c.json({ ...note, tags: [] }, 201);
   } catch (error) {
     return c.json({ error: "Failed to create note" }, 500);
   }
