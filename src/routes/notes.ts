@@ -182,14 +182,42 @@ notesRouter.put("/:id", async (c: Context) => {
 
   const id = c.req.param("id");
   try {
-    const existingNote = await prisma.note.findFirst({
+    // Check if user is owner or has edit access
+    const note = await prisma.note.findFirst({
       where: {
         id,
-        userId: auth.userId,
+        OR: [
+          { userId: auth.userId },
+          {
+            sharedWith: {
+              some: {
+                userId: auth.userId,
+                access: "edit",
+              },
+            },
+          },
+          {
+            team: {
+              members: {
+                some: {
+                  userId: auth.userId,
+                },
+              },
+            },
+          },
+        ],
+      },
+      include: {
+        sharedWith: true,
+        team: {
+          include: {
+            members: true,
+          },
+        },
       },
     });
 
-    if (!existingNote) {
+    if (!note) {
       return c.json({ message: "Note not found or unauthorized" }, 404);
     }
 
@@ -199,19 +227,32 @@ notesRouter.put("/:id", async (c: Context) => {
       return c.json({ error: "Title or content is required" }, 400);
     }
 
-    const note = await prisma.note.update({
+    // Only allow title updates for note owner
+    const updateData = {
+      ...(note.userId === auth.userId && title ? { title } : {}),
+      ...(content ? { content } : {}),
+    };
+
+    const updatedNote = await prisma.note.update({
       where: { id },
-      data: {
-        ...(title && { title }),
-        ...(content && { content }),
+      data: updateData,
+      include: {
+        tags: {
+          include: {
+            tag: true,
+          },
+        },
       },
     });
 
-    // Automatically analyze and tag the updated note
-    await analyzeAndTagNote(note.id);
+    // Only analyze tags if content was updated
+    if (content) {
+      await analyzeAndTagNote(updatedNote.id);
+    }
 
-    return c.json(note);
+    return c.json(updatedNote);
   } catch (error) {
+    console.error("Failed to update note:", error);
     return c.json({ error: "Failed to update note" }, 500);
   }
 });
