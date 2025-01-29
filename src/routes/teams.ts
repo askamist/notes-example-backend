@@ -221,4 +221,43 @@ teamsRouter.delete("/:teamId/members/:memberId", async (c: Context) => {
   }
 });
 
+// Add DELETE team endpoint
+teamsRouter.delete("/:id", async (c: Context) => {
+  const auth = getAuth(c);
+  if (!auth?.userId) {
+    return c.json({ message: "Unauthorized" }, 401);
+  }
+
+  const teamId = c.req.param("id");
+
+  try {
+    // Verify team ownership
+    const team = await prisma.team.findFirst({
+      where: {
+        id: teamId,
+        ownerId: auth.userId,
+      },
+    });
+
+    if (!team) {
+      return c.json({ error: "Team not found or unauthorized" }, 404);
+    }
+
+    // Delete all team members first
+    await prisma.teamMember.deleteMany({
+      where: { teamId },
+    });
+
+    // Delete the team
+    await prisma.team.delete({
+      where: { id: teamId },
+    });
+
+    return c.json({ message: "Team deleted successfully" });
+  } catch (error) {
+    console.error("Failed to delete team:", error);
+    return c.json({ error: "Failed to delete team" }, 500);
+  }
+});
+
 export default teamsRouter;
